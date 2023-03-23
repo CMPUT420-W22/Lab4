@@ -1,47 +1,21 @@
-all: main1 main2 main3 main4 client attacker
+all: datatrim main 
+	
+main: Lab4_IO.o
+	mpic++ main.cpp Lab4_IO.o -o main  
 
-main1: singleMutexServer.o
-	g++ -o main1 singleMutexServer.o -pthread
-	
-singleMutexServer.o: singleMutexServer.cpp timer.h common.h
-	g++ -c -o singleMutexServer.o singleMutexServer.cpp
+Lab4_IO.o: Lab4_IO.c Lab4_IO.h
+	gcc -c -o Lab4_IO.o Lab4_IO.c
 
-main2: singleReadServer.o
-	g++ -o main2 singleReadServer.o -pthread
-	
-singleReadServer.o: singleReadServer.cpp timer.h common.h
-	g++ -c -o singleReadServer.o singleReadServer.cpp
+datatrim: datatrim.o
+	gcc -o datatrim datatrim.o 
 
-main3: multReadServer.o
-	g++ -o main3 multReadServer.o -pthread
-	
-multReadServer.o: multReadServer.cpp timer.h common.h
-	g++ -c -o multReadServer.o multReadServer.cpp	
+datatrim.o: datatrim.c 
+	gcc -c -o datatrim.o datatrim.c
 
-main4: multMutexServer.o
-	g++ -o main4 multMutexServer.o -pthread
-	
-multMutexServer.o: multMutexServer.cpp timer.h common.h
-	g++ -c -o multMutexServer.o multMutexServer.cpp	
-
-client: client.o
-	gcc -o client client.o -pthread
-	
-client.o: client.c common.h
-	gcc -c -o client.o client.c
-
-attacker: attacker.o
-	gcc -o attacker attacker.o -pthread -lm
-	
-attacker.o: attacker.c common.h
-	gcc -c -o attacker.o attacker.c 
-	
+test: 
+	gcc serialtester.c Lab4_IO.c -o serialtester -lm 
+	./serialtester
 clean: 
 	rm *.o
-	rm main1
-	rm main2
-	rm main3
-	rm main4
-	rm attacker
-	rm client
-	rm server_output_time_aggregated
+	rm datatrim
+	rm main
