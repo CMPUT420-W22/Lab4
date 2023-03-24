@@ -28,9 +28,9 @@ int main(int argc, char* argv[]){
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &numOfThreads);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank); 
-    struct node **nodeHead; 
+    struct node *nodeHead; 
    
-    //master process will call the node_init function provided
+    //master process create the graph
     //process very similar to init_node function provided in Lab4_IO.h
     if (rank == 0) {
         //open the data_input_meta file to get the amount of nodes generated.
@@ -43,22 +43,49 @@ int main(int argc, char* argv[]){
         fscanf(fp,"%d\n",&size);
         //allocate size amount of spaces to store the node in our graph
         nodeHead = malloc(size * sizeof(struct node));
-        //allocating space for size length array to store count of nodes.
+        //going through our "graph" and assigning num_in_links, num_out_links, and allocating space for the inlinks property,
+        //so when we access the data_input_link we can fill the array for each node.
+        // printf("HWEEEDDEDE\n");
+        // printf("%ld\n",size*sizeof(struct node));
+        // fflush(stdout);
         int nodeID, num_in, num_out;
-        for ( int i = 0; i < size; ++i){
+        for ( int i = 0; i < size; i++){
             fscanf(fp, "%d\t%d\t%d\n", &nodeID, &num_in, &num_out);
             if (nodeID != i){
                 printf("Error loading meta data, node id inconsistent!\n");
-                return -2;
+                exit(1);
             }
-            (nodeHead)[i]->num_in_links = num_in;
-            (nodeHead)[i]->num_out_links = num_out;
-            (nodeHead)[i]->inlinks = malloc(num_in * sizeof(int));
+            nodeHead[i].num_in_links = num_in;
+            nodeHead[i].num_out_links = num_out;
+            nodeHead[i].inlinks = malloc(num_in * sizeof(int));
         }
         fclose(fp);
-     
+        
+        //once link file is opened we need to update our inlinks property for each node in our graph.
+        if ((fp = fopen("data_input_link","r")) == NULL){
+            printf("Fail to open file 'data_input_link'. \n");
+            exit(1);
+        }
+        //again will be similar to init_node fucntion
+        int *index;
+        int src, dst; 
+        index = malloc(size * sizeof(int));
+        for(int i=0; i<size; ++i){
+            index[i] = 0;
+        }
+        //until EOF
+        while(!feof(fp)){
+            fscanf(fp, "%d\t%d\n", &src, &dst);
+            if (dst >= 0 && dst < size)
+                nodeHead[dst].inlinks[index[dst]++] = src;
+        }
+        free(index);
+        fclose(fp);
+        //graph has been created and values are set. 
     }
+
+    
     
 
-
+    MPI_Finalize();
 }
