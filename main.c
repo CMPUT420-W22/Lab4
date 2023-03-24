@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include "Lab4_IO.h"
+#include "timer.h"
 
 // Structure to store the node info
 struct node{
@@ -13,8 +14,8 @@ struct node{
 };
 
 //global values
-#define e = 0.00001;
-#define d = 0.85; 
+#define e 0.00001
+#define d 0.85
 int main(int argc, char* argv[]){
 
     int numOfThreads;
@@ -101,9 +102,53 @@ int main(int argc, char* argv[]){
     nodeHead = nodeSubHead;
     //at this point every process had its assigned chunk of the nodeHead.
 
-    
+    //------- PAGE RANK -------//
+    //starting the timer
+    if (rank == 0) GET_TIME(sTime);
+
+    //intializing rankVector variables
+    double * resultRVector = malloc(size * sizeof(double));
+    double * preRVector = malloc(size * sizeof(double));
+    for (int i = 0; i<size; i++){
+        resultRVector[i] = 1;
+        preRVector[i] = 1;
+    }
+    // int flag = 1; 
+    // while(flag){
+    //     flag = 0;
+
+    //     for(int i = 0; i < rowsPerThread; i++){
+    //         // if the termination condition is not met
+    //         if ( (fabs(rankVector[(rank* rowsPerThread) + i] - preRVector[i])/fabs(preRVector[i])) > e){
+    //             //we continue to iterate
+    //             flag = 1;
+    //             double sum = 0;
+    //             int tempNode = 0;
+    //             for (int j = 0; j < size; j++){
+    //                 tempNode = nodeHead[(i*size) + j].num_in_links;
+    //                 if (tempNode > 0){
+    //                     sum += rankVector[j]/tempNode;
+    //                 }
+    //             }
+    //             sum *= d;
+    //             sum += (1-d) * 1/size;
+    //             resultRVector[i] = sum;
+    //             preRVector[i] = rankVector[(rank * rowsPerThread) + i];
+    //         }
+    //     }
+
+    //     MPI_Allgather(resultRVector, rowsPerThread, MPI_DOUBLE, rankVector, rowsPerThread, MPI_DOUBLE,MPI_COMM_WORLD);
+
+    // }
 
 
+
+
+    if(rank == 0){
+		GET_TIME(eTime);
+        double ttime = eTime - sTime;
+		Lab4_saveoutput(rankVector, size, ttime);
+	}
 
     MPI_Finalize();
     
