@@ -1,10 +1,7 @@
 all: datatrim main 
 	
-main: Lab4_IO.o
-	mpic++ main.cpp Lab4_IO.o -o main  
-
-Lab4_IO.o: Lab4_IO.c Lab4_IO.h
-	gcc -c -o Lab4_IO.o Lab4_IO.c
+main: main.c
+	mpicc -o main main.c Lab4_IO.h Lab4_IO.c -lm 
 
 datatrim: datatrim.o
 	gcc -o datatrim datatrim.o 
@@ -16,6 +13,6 @@ test:
 	gcc serialtester.c Lab4_IO.c -o serialtester -lm 
 	./serialtester
 clean: 
+	rm main
 	rm *.o
 	rm datatrim
-	rm main
