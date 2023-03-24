@@ -22,7 +22,7 @@ int main(int argc, char* argv[]){
     int rowsPerThread;
     int size; 
     double sTime, eTime; 
-    double* rank_list;
+    double* rankVector; 
     FILE *fp; 
     //init MPI and get the process information 
     MPI_Init(&argc, &argv);
@@ -45,9 +45,6 @@ int main(int argc, char* argv[]){
         nodeHead = malloc(size * sizeof(struct node));
         //going through our "graph" and assigning num_in_links, num_out_links, and allocating space for the inlinks property,
         //so when we access the data_input_link we can fill the array for each node.
-        // printf("HWEEEDDEDE\n");
-        // printf("%ld\n",size*sizeof(struct node));
-        // fflush(stdout);
         int nodeID, num_in, num_out;
         for ( int i = 0; i < size; i++){
             fscanf(fp, "%d\t%d\t%d\n", &nodeID, &num_in, &num_out);
@@ -84,8 +81,30 @@ int main(int argc, char* argv[]){
         //graph has been created and values are set. 
     }
 
+    //letting all proccesses know what the value of size is. 
+    MPI_Bcast(&size, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    //initilizing the rankVector & the amount of rows a thread will be assigned
     
+    rankVector = malloc(size* sizeof(double));
+    for (int i =0; i<size; i++){
+        rankVector[i] = 1/size;
+    }
+    rowsPerThread = size / numOfThreads;
+    
+    // Allocate memory for nodeHead on each process
+    struct node *nodeSubHead = malloc(rowsPerThread * sizeof(struct node));
+
+    // Scatter nodeHead to all processes
+    MPI_Scatter(nodeHead, rowsPerThread * sizeof(struct node), MPI_CHAR, nodeSubHead, rowsPerThread * sizeof(struct node), MPI_CHAR, 0, MPI_COMM_WORLD);
+
+    // Use nodeSubHead instead of nodeHead from now on
+    nodeHead = nodeSubHead;
+    //at this point every process had its assigned chunk of the nodeHead.
+
     
 
+
+
     MPI_Finalize();
+    
 }
