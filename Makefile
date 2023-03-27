@@ -13,6 +13,8 @@ test:
 	gcc serialtester.c Lab4_IO.c -o serialtester -lm 
 	./serialtester
 clean: 
+	rm data_*
 	rm main
 	rm *.o
 	rm datatrim
+	rm serialtester

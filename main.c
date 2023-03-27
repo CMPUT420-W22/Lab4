@@ -5,7 +5,7 @@
 #include <math.h>
 #include "Lab4_IO.h"
 #include "timer.h"
-
+#define LAB4_EXTEND
 // Structure to store the node info
 struct node{
     int *inlinks;
@@ -13,143 +13,128 @@ struct node{
     int num_out_links;
 };
 
-//global values
-#define e 0.00001
-#define d 0.85
+// global values defined in lab manual
+#define EPSILON 0.00001
+#define DAMPING 0.85
+
+double get_relative_error(double *r, double *t, int size){
+    // same as rel_error() function defined in Lab4_IO
+    // redefined here as rel_error() was causing errors
+    int i;
+    double norm_diff = 0, norm_vec = 0;
+    for (i = 0; i < size; ++i){
+        norm_diff += (r[i] - t[i]) * (r[i] - t[i]);
+        norm_vec += t[i] * t[i];
+    }
+    return sqrt(norm_diff/norm_vec);
+}
+
 int main(int argc, char* argv[]){
-
-    int numOfThreads;
-    int rank; 
-    int rowsPerThread;
-    int size; 
+    // initialize variables
+    int numProcesses, rank, rowsPerProcess;
+    int numNodes, numNodesLocal, localStartNode; 
     double sTime, eTime; 
-    double* rankVector; 
+    double *r_new, *r_old, *r_local;
     FILE *fp; 
-    //init MPI and get the process information 
-    MPI_Init(&argc, &argv);
-    MPI_Comm_size(MPI_COMM_WORLD, &numOfThreads);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank); 
     struct node *nodeHead; 
-   
-    //master process create the graph
-    //process very similar to init_node function provided in Lab4_IO.h
+
+    // init MPI and get the process information 
+    MPI_Init(&argc, &argv);
+    MPI_Comm_size(MPI_COMM_WORLD, &numProcesses);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank); 
+    
+    //getting amount of nodes stored in size
+    if ((fp = fopen("data_input_meta","r")) == NULL){
+        printf("Fail to open file 'data_input_meta'. \n");
+        exit(1);
+    }
+    fscanf(fp,"%d\n",&numNodes);
+
+    // use node_init function to initialize array of nodes
+    node_init(&nodeHead,0,numNodes);
+
+    // set up number of nodes per process and the starting node for each process
+    numNodesLocal = numNodes / numProcesses;
+    localStartNode = rank * numNodesLocal;
+
+    // allocate space for rank vectors
+    // r_new can be considered r(t+1)
+    // r_old can be considered previous value of r
+    // r_local is each process' rank vector to work on
+    r_new = malloc(numNodes * sizeof(double));
+    r_old = malloc(numNodes * sizeof(double));
+    r_local = malloc(numNodesLocal * sizeof(double));
+
+    // to optimize performance we only need the master process to initialize the rank vector
     if (rank == 0) {
-        //open the data_input_meta file to get the amount of nodes generated.
-        //saved in size
-        if ((fp = fopen("data_input_meta","r")) == NULL){
-            printf("Fail to open file 'data_input_meta'. \n");
-            exit(1);
+        for (int i = 0; i < numNodes; ++i){
+            // initially each node has probability value 1/N
+            r_new[i] = 1.0 / numNodes;
         }
-        //getting amount of nodes stored in size
-        fscanf(fp,"%d\n",&size);
-        //allocate size amount of spaces to store the node in our graph
-        nodeHead = malloc(size * sizeof(struct node));
-        //going through our "graph" and assigning num_in_links, num_out_links, and allocating space for the inlinks property,
-        //so when we access the data_input_link we can fill the array for each node.
-        int nodeID, num_in, num_out;
-        for ( int i = 0; i < size; i++){
-            fscanf(fp, "%d\t%d\t%d\n", &nodeID, &num_in, &num_out);
-            if (nodeID != i){
-                printf("Error loading meta data, node id inconsistent!\n");
-                exit(1);
-            }
-            nodeHead[i].num_in_links = num_in;
-            nodeHead[i].num_out_links = num_out;
-            nodeHead[i].inlinks = malloc(num_in * sizeof(int));
+
+    }
+
+    // start timer
+    if (rank == 0){
+        GET_TIME(sTime);
+    }
+
+
+    // we continue to compute r until we reach threshold
+    do {
+
+        // we only need the master process to update the rank vector
+        // so now we have 2 copies of rank vector, one previous and one new 
+        if (rank == 0){
+            // copy r_new into r_old
+            vec_cp(r_new, r_old, numNodes);
         }
-        fclose(fp);
+
+        // broadcast the rank vector to all other processes
+        MPI_Bcast(r_old, numNodes, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        //MPI_Scatter(r_old, numNodesLocal, MPI_DOUBLE,
+        //            r_local, numNodesLocal, MPI_DOUBLE,
+        //           0, MPI_COMM_WORLD);
+
         
-        //once link file is opened we need to update our inlinks property for each node in our graph.
-        if ((fp = fopen("data_input_link","r")) == NULL){
-            printf("Fail to open file 'data_input_link'. \n");
-            exit(1);
-        }
-        //again will be similar to init_node fucntion
-        int *index;
-        int src, dst; 
-        index = malloc(size * sizeof(int));
-        for(int i=0; i<size; ++i){
-            index[i] = 0;
-        }
-        //until EOF
-        while(!feof(fp)){
-            fscanf(fp, "%d\t%d\n", &src, &dst);
-            if (dst >= 0 && dst < size)
-                nodeHead[dst].inlinks[index[dst]++] = src;
-        }
-        free(index);
-        fclose(fp);
-        //graph has been created and values are set. 
-    }
+        // loop over # of nodes local to each processor
+        for (int i = 0; i < numNodesLocal; ++i){
+            r_local[i] = 0;
 
-    //letting all proccesses know what the value of size is. 
-    MPI_Bcast(&size, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    //initilizing the rankVector & the amount of rows a thread will be assigned
+            // Sum over set of nodes with an outgoing link to node i (which is incoming links to node i)
+            for (int j = 0; j < nodeHead[i+localStartNode].num_in_links;++j){
+                // Perform calculation from lab manual
+                // r_j(t) / l_j
+                r_local[i] += r_old[nodeHead[i+localStartNode].inlinks[j]] / nodeHead[nodeHead[i+localStartNode].inlinks[j]].num_out_links;
+            }
+
+            // Account for damping factors
+            r_local[i] *= DAMPING;
+            r_local[i] += ((1-DAMPING) / numNodes);
+            // by the end of this, r_local[i] = (1-d)*(1/N) + d * sum(r_j(t) / l_j) as per lab manual
+
+        }
+
+        // Combine local rank vectors into r_new
+        MPI_Allgather(r_local, numNodesLocal, MPI_DOUBLE,
+                        r_new, numNodesLocal, MPI_DOUBLE,
+                        MPI_COMM_WORLD);
+        
+
+    } while (get_relative_error(r_new,r_old,numNodes) >= EPSILON);
+
+
+    if (rank == 0){
+        // we only need one process to save the time and save to output
+        GET_TIME(eTime);
+        Lab4_saveoutput(r_new,numNodes, eTime-sTime);
+    }
     
-    rankVector = malloc(size* sizeof(double));
-    for (int i =0; i<size; i++){
-        rankVector[i] = 1/size;
-    }
-    rowsPerThread = size / numOfThreads;
-    
-    // Allocate memory for nodeHead on each process
-    struct node *nodeSubHead = malloc(rowsPerThread * sizeof(struct node));
-
-    // Scatter nodeHead to all processes
-    MPI_Scatter(nodeHead, rowsPerThread * sizeof(struct node), MPI_CHAR, nodeSubHead, rowsPerThread * sizeof(struct node), MPI_CHAR, 0, MPI_COMM_WORLD);
-
-    // Use nodeSubHead instead of nodeHead from now on
-    nodeHead = nodeSubHead;
-    //at this point every process had its assigned chunk of the nodeHead.
-
-    //------- PAGE RANK -------//
-    //starting the timer
-    if (rank == 0) GET_TIME(sTime);
-
-    //intializing rankVector variables
-    double * resultRVector = malloc(size * sizeof(double));
-    double * preRVector = malloc(size * sizeof(double));
-    for (int i = 0; i<size; i++){
-        resultRVector[i] = 1;
-        preRVector[i] = 1;
-    }
-    // int flag = 1; 
-    // while(flag){
-    //     flag = 0;
-
-    //     for(int i = 0; i < rowsPerThread; i++){
-    //         // if the termination condition is not met
-    //         if ( (fabs(rankVector[(rank* rowsPerThread) + i] - preRVector[i])/fabs(preRVector[i])) > e){
-    //             //we continue to iterate
-    //             flag = 1;
-    //             double sum = 0;
-    //             int tempNode = 0;
-    //             for (int j = 0; j < size; j++){
-    //                 tempNode = nodeHead[(i*size) + j].num_in_links;
-    //                 if (tempNode > 0){
-    //                     sum += rankVector[j]/tempNode;
-    //                 }
-    //             }
-    //             sum *= d;
-    //             sum += (1-d) * 1/size;
-    //             resultRVector[i] = sum;
-    //             preRVector[i] = rankVector[(rank * rowsPerThread) + i];
-    //         }
-    //     }
-
-    //     MPI_Allgather(resultRVector, rowsPerThread, MPI_DOUBLE, rankVector, rowsPerThread, MPI_DOUBLE,MPI_COMM_WORLD);
-
-    // }
-
-
-
-
-    if(rank == 0){
-		GET_TIME(eTime);
-        double ttime = eTime - sTime;
-		Lab4_saveoutput(rankVector, size, ttime);
-	}
-
+    // clean up
     MPI_Finalize();
+    node_destroy(nodeHead);
+    free(r_new); free(r_old); free(r_local);
+
+    return 0;
     
 }
