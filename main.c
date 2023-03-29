@@ -71,18 +71,15 @@ int main(int argc, char* argv[]){
             // initially each node has probability value 1/N
             r_new[i] = 1.0 / numNodes;
         }
-
     }
 
     // start timer
     if (rank == 0){
         GET_TIME(sTime);
     }
-
-
+  
     // we continue to compute r until we reach threshold
     do {
-
         // we only need the master process to update the rank vector
         // so now we have 2 copies of rank vector, one previous and one new 
         if (rank == 0){
@@ -92,11 +89,7 @@ int main(int argc, char* argv[]){
 
         // broadcast the rank vector to all other processes
         MPI_Bcast(r_old, numNodes, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-        //MPI_Scatter(r_old, numNodesLocal, MPI_DOUBLE,
-        //            r_local, numNodesLocal, MPI_DOUBLE,
-        //           0, MPI_COMM_WORLD);
 
-        
         // loop over # of nodes local to each processor
         for (int i = 0; i < numNodesLocal; ++i){
             r_local[i] = 0;
@@ -121,7 +114,7 @@ int main(int argc, char* argv[]){
                         MPI_COMM_WORLD);
         
 
-    } while (get_relative_error(r_new,r_old,numNodes) >= EPSILON);
+    } while (get_relative_error(r_new,r_old,numNodes) > EPSILON);
 
 
     if (rank == 0){
@@ -132,7 +125,7 @@ int main(int argc, char* argv[]){
     
     // clean up
     MPI_Finalize();
-    node_destroy(nodeHead);
+    node_destroy(nodeHead, numNodes);
     free(r_new); free(r_old); free(r_local);
 
     return 0;
