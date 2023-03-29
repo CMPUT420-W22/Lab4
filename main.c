@@ -32,7 +32,7 @@ double get_relative_error(double *r, double *t, int size){
 int main(int argc, char* argv[]){
     // initialize variables
     int numProcesses, rank, rowsPerProcess;
-    int numNodes, numNodesLocal, localStartNode; 
+    int numNodes, numNodesLocal, localStartNode, numToIterate;
     double sTime, eTime; 
     double *r_new, *r_old, *r_local;
     FILE *fp; 
@@ -49,8 +49,12 @@ int main(int argc, char* argv[]){
         exit(1);
     }
     fscanf(fp,"%d\n",&numNodes);
-
+    int padding = numProcesses - (numNodes % numProcesses); 
     // use node_init function to initialize array of nodes
+    // Compute the number of elements to be padded with zeros
+    if (padding != 0) { // 7%5 = 2
+        numNodes += padding;
+    }
     node_init(&nodeHead,0,numNodes);
 
     // set up number of nodes per process and the starting node for each process
@@ -67,7 +71,7 @@ int main(int argc, char* argv[]){
 
     // to optimize performance we only need the master process to initialize the rank vector
     if (rank == 0) {
-        for (int i = 0; i < numNodes; ++i){
+        for (int i = 0; i < numNodes-padding; ++i){
             // initially each node has probability value 1/N
             r_new[i] = 1.0 / numNodes;
         }
@@ -84,7 +88,7 @@ int main(int argc, char* argv[]){
         // so now we have 2 copies of rank vector, one previous and one new 
         if (rank == 0){
             // copy r_new into r_old
-            vec_cp(r_new, r_old, numNodes);
+            vec_cp(r_new, r_old, numNodes-padding);
         }
 
         // broadcast the rank vector to all other processes
@@ -103,7 +107,7 @@ int main(int argc, char* argv[]){
 
             // Account for damping factors
             r_local[i] *= DAMPING;
-            r_local[i] += ((1-DAMPING) / numNodes);
+            r_local[i] += ((1-DAMPING) / (numNodes-padding));
             // by the end of this, r_local[i] = (1-d)*(1/N) + d * sum(r_j(t) / l_j) as per lab manual
 
         }
@@ -114,13 +118,13 @@ int main(int argc, char* argv[]){
                         MPI_COMM_WORLD);
         
 
-    } while (get_relative_error(r_new,r_old,numNodes) > EPSILON);
+    } while (get_relative_error(r_new,r_old,numNodes-padding) > EPSILON);
 
 
     if (rank == 0){
         // we only need one process to save the time and save to output
         GET_TIME(eTime);
-        Lab4_saveoutput(r_new,numNodes, eTime-sTime);
+        Lab4_saveoutput(r_new,numNodes-padding, eTime-sTime);
     }
     
     // clean up
